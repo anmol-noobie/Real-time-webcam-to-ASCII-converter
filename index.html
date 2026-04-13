@@ -631,7 +631,7 @@
                 // Request webcam access with preferred 640x480 resolution
                 // 480p is a good balance between quality and performance
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 640 }, height: { ideal: 480 } }
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
                 });
                 
                 // Attach the camera stream to our hidden video element
@@ -641,16 +641,40 @@
                 webcamDisplay.srcObject = stream;
                 
                 // Wait for video metadata to load (ensures videoWidth/Height are available)
-                await new Promise((resolve) => {
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Video metadata timeout'));
+                    }, 5000);
+                    
+                    const checkReady = () => {
+                        if (video.videoWidth > 0 && video.videoHeight > 0) {
+                            clearTimeout(timeout);
+                            video.removeEventListener('loadedmetadata', checkReady);
+                            resolve();
+                        }
+                    };
+                    
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        clearTimeout(timeout);
                         resolve();
                     } else {
-                        video.addEventListener('loadedmetadata', resolve, { once: true });
+                        video.addEventListener('loadedmetadata', checkReady, { once: true });
                     }
                 });
                 
+                // Also wait for webcamDisplay to be ready
+                if (webcamDisplay.videoWidth === 0) {
+                    await new Promise((resolve) => {
+                        webcamDisplay.addEventListener('loadedmetadata', resolve, { once: true });
+                    });
+                }
+                
                 // Start playing
                 await video.play();
+                await webcamDisplay.play().catch(() => {});
+                
+                // Additional wait to ensure video is actually rendering
+                await new Promise(resolve => setTimeout(resolve, 100));
                 
                 // Set canvas size to match video dimensions
                 setupCanvas();
@@ -663,6 +687,7 @@
             } catch (error) {
                 // Show error message if camera access denied or unavailable
                 showError('Unable to access webcam. Please grant camera permission.');
+                console.error('Camera error:', error);
             }
         }
 
@@ -855,6 +880,12 @@
         function processFrame() {
             // Don't run if paused
             if (!isRunning) return;
+            
+            // Ensure video is ready
+            if (!video.videoWidth || !video.videoHeight) {
+                animationId = requestAnimationFrame(processFrame);
+                return;
+            }
             
             /*
              * STEP 1: Capture video frame to canvas
@@ -1095,6 +1126,9 @@
             asciiOutput.style.display = isSidebyside ? 'none' : 'block';
             
             sidebysideBtn.classList.toggle('active', isSidebyside);
+            
+            // Force reflow to ensure panels are properly sized
+            void displayContainer.offsetHeight;
             
             setTimeout(() => {
                 calculateAndCacheDimensions();
