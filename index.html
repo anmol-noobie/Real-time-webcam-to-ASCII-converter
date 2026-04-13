@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASCII Camera</title>
+    <style>
+        /* ============================================================
+           BASE STYLES - Reset and page layout
+           ============================================================ */
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* 
+         * Body styling - Matrix/terminal aesthetic
+         * Dark background with green text gives the classic hacker/matrix look
+         * Flexbox column layout: toolbar at top, display fills remaining space
+         */
+        body {
+            background-color: #0a0a0a;        /* Near-black background */
+            color: #00ff41;                   /* Matrix green text */
+            font-family: 'Courier New', Courier, monospace;  /* Monospace font essential for ASCII art */
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;                /* Prevent scrollbars */
+            margin: 0;
+            padding: 0;
+        }
+
+        /* ============================================================
+           TOOLBAR - Top control bar with all user controls
+           ============================================================ */
+        
+        .toolbar {
+            width: 100%;
+            padding: 8px 15px;
+            background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);  /* Subtle gradient effect */
+            border-bottom: 1px solid var(--theme-color-dim, #00ff4133);  /* Themed border */
+            display: flex;
+            flex-wrap: wrap;                 /* Wrap controls on smaller screens */
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;                     /* Stay above display */
+            flex-shrink: 0;                  /* Don't shrink, keep full height */
+        }
+
+        /* Groups related controls together (label + input) */
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Labels appear small and uppercase for a technical look */
+        .control-group label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* ============================================================
+           DENSITY SLIDER - Controls how many chars from palette are used
+           ============================================================ */
+        
+        /* 
+         * Custom slider styling that matches the theme
+         * Width/height define the track size
+         * -webkit-appearance: none removes default browser styling
+         */
+        input[type="range"] {
+            width: 60px;
+            height: 4px;
+            -webkit-appearance: none;        /* Remove default browser style */
+            background: var(--theme-color-dim, #00ff4133);  /* Track color */
+            border-radius: 2px;
+            outline: none;
+        }
+
+        /* The draggable thumb/handle of the slider */
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--theme-color, #00ff41);  /* Filled circle */
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--theme-color, #00ff41);  /* Glow effect */
+        }
+
+        /* ============================================================
+           TEXT INPUT - For custom character palette
+           ============================================================ */
+        
+        input[type="text"] {
+            background: transparent;
+            border: 1px solid var(--theme-color, #00ff41);
+            color: var(--theme-color, #00ff41);
+            padding: 3px 6px;
+            font-family: inherit;
+            font-size: 9px;
+            width: 70px;
+            outline: none;
+        }
+
+        input[type="text"]::placeholder {
+            color: var(--theme-color-dim, #00ff4180);  /* Dimmed placeholder text */
+        }
+
+        /* ============================================================
+           BUTTONS - Action buttons (Invert, Fullscreen, Screenshot)
+           ============================================================ */
+        
+        .btn {
+            background: transparent;
+            border: 1px solid var(--theme-color, #00ff41);
+            color: var(--theme-color, #00ff41);
+            padding: 4px 8px;
+            font-family: inherit;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        /* Button glows on hover */
+        .btn:hover {
+            background: var(--theme-color, #00ff41);
+            color: #0a0a0a;
+            box-shadow: 0 0 10px var(--theme-color, #00ff41);
+        }
+
+        /* Active/selected state (when toggled on) */
+        .btn.active {
+            background: var(--theme-color, #00ff41);
+            color: #0a0a0a;
+        }
+
+        /* ============================================================
+           PALETTE BUTTONS - Binary, ASCII, Blocks, Custom options
+           ============================================================ */
+        
+        /* Clickable text buttons for selecting character palette */
+        .label-btn {
+            padding: 1px 4px;
+            font-size: 8px;
+            cursor: pointer;
+            border: 1px solid var(--theme-color-dim, #00ff4133);
+            color: var(--theme-color-dim, #00ff4180);
+            transition: all 0.2s;
+        }
+
+        /* Highlight active/hovered buttons */
+        .label-btn:hover,
+        .label-btn.active {
+            border-color: var(--theme-color, #00ff41);
+            color: var(--theme-color, #00ff41);
+        }
+
+        /* Horizontal row of buttons */
+        .palette-labels, .color-labels {
+            display: flex;
+            gap: 4px;
+        }
+
+        /* ============================================================
+           CUSTOM PALETTE INPUT - Hidden by default
+           ============================================================ */
+        
+        /* Hidden until "Custom" palette is selected */
+        .custom-palette-input {
+            display: none;
+        }
+
+        .custom-palette-input.visible {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* ============================================================
+           DISPLAY CONTAINER - Where ASCII output is shown
+           ============================================================ */
+        
+        /* 
+         * Main display area that holds the ASCII camera output
+         * flex: 1 makes it fill all available vertical space
+         */
+        .display-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            overflow: hidden;
+            position: relative;
+            border: 2px solid var(--theme-color, #00ff41);
+            box-shadow: 0 0 20px var(--theme-color-dim, #00ff4133),
+                        inset 0 0 30px var(--theme-color-dim, #00ff4133);
+        }
+
+        /* Normal mode has padding around ASCII output */
+        .display-container.normal {
+            padding: 10px;
+        }
+
+        /* Fullscreen mode removes padding, fills entire area */
+        .display-container.fullscreen {
+            padding: 0;
+        }
+
+        /* Side-by-side mode: webcam on left, ASCII on right */
+        .display-container.sidebyside {
+            padding: 10px;
+            justify-content: center;
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .sidebyside-panel {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            background: #050505;
+            border: 2px solid var(--theme-color, #00ff41);
+            border-radius: 8px;
+            box-shadow: 0 0 15px var(--theme-color-dim, #00ff4133),
+                        inset 0 0 20px rgba(0, 0, 0, 0.5);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .sidebyside-panel > *:not(.panel-label) {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .sidebyside-panel.hidden {
+            display: none;
+        }
+
+        .sidebyside .sidebyside-panel {
+            display: flex;
+        }
+
+        .sidebyside-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 1px solid var(--theme-color-dim, #00ff4133);
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        .panel-label {
+            position: absolute;
+            top: 3px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--theme-color, #00ff41);
+            text-shadow: 0 0 5px var(--theme-color, #00ff41);
+            z-index: 10;
+            background: rgba(5, 5, 5, 0.9);
+            padding: 1px 6px;
+            border-radius: 2px;
+        }
+
+        #webcam-display {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        #ascii-output-wrapper {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        /* ============================================================
+           ASCII OUTPUT - The actual ASCII art display
+           ============================================================ */
+        
+        /* 
+         * The rendered ASCII characters
+         * font-size 8px with line-height 8px = 1:1 aspect ratio (square cells)
+         * white-space: pre preserves exact spacing and line breaks
+         * text-align: center keeps ASCII art centered
+         */
+        #ascii-output {
+            font-size: 8px;                  /* Small font = more detail/characters */
+            line-height: 8px;                /* Must match font-size for square cells */
+            white-space: pre;                /* CRITICAL: preserves spaces and newlines */
+            text-align: center;
+            letter-spacing: 0px;             /* No extra spacing between chars */
+            color: var(--theme-color, #00ff41);
+            overflow: hidden;
+        }
+
+        #ascii-output-inline {
+            white-space: pre;
+            text-align: center;
+            letter-spacing: 0px;
+            color: var(--theme-color, #00ff41);
+        }
+
+        /* ============================================================
+           FPS COUNTER - Performance monitor in bottom-right
+           ============================================================ */
+        
+        .fps-counter {
+            position: fixed;
+            bottom: 5px;
+            right: 5px;
+            font-size: 10px;
+            color: var(--theme-color-dim, #00ff4180);
+            background: #0a0a0a;
+            padding: 2px 6px;
+            border: 1px solid var(--theme-color-dim, #00ff4133);
+            z-index: 200;
+        }
+
+        /* ============================================================
+           HIDDEN ELEMENTS - Video and canvas (used but not visible)
+           ============================================================ */
+        
+        .video-container {
+            display: none;                   /* Hidden container for webcam elements */
+        }
+
+        /* Canvas and video are hidden but used for image processing */
+        #video, #canvas {
+            display: none;
+        }
+
+        /* ============================================================
+           ERROR MESSAGE - Displayed when camera access fails
+           ============================================================ */
+        
+        .error-message {
+            color: #ff4141;                   /* Red for errors */
+            text-align: center;
+            padding: 20px;
+            font-size: 14px;
+        }
+
+        /* ============================================================
+           COLOR SWATCHES - Clickable color options
+           ============================================================ */
+        
+        /* Small colored squares that act as color selection buttons */
+        .color-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 2px;
+            cursor: pointer;
+            border: 1px solid var(--theme-color-dim, #00ff4133);
+            transition: all 0.2s;
+        }
+
+        /* Glow effect on hover/active */
+        .color-swatch:hover,
+        .color-swatch.active {
+            border-color: var(--theme-color, #00ff41);
+            box-shadow: 0 0 6px var(--theme-color, #00ff41);
+        }
+
+        /* Each swatch shows its actual color */
+        .color-swatch[data-value="green"] { background: #00ff41; }
+        .color-swatch[data-value="white"] { background: #f0f0f0; }
+        .color-swatch[data-value="amber"] { background: #ffb000; }
+        .color-swatch[data-value="blue"] { background: #00cfff; }
+        .color-swatch[data-value="red"] { background: #ff4444; }
+    </style>
+</head>
+<body>
+    <!-- Hidden container: holds video element (webcam stream) and canvas (for pixel manipulation) -->
+    <div class="video-container">
+        <video id="video" autoplay playsinline></video>
+        <!-- 
+            Canvas is used as an intermediate step:
+            1. Video frame is drawn onto canvas
+            2. We read pixel data from canvas using getImageData()
+            3. This gives us RGB values for each pixel
+        -->
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <!-- ============================================================
+         TOOLBAR - All user controls in one horizontal bar
+         ============================================================ -->
+    <div class="toolbar">
+        
+        <!-- PALETTE SELECTOR: Choose which characters to use for ASCII conversion -->
+        <div class="control-group">
+            <label>Palette:</label>
+            <div class="palette-labels">
+                <!-- Binary: Only 0 and 1 characters -->
+                <span class="label-btn" data-value="binary">Binary</span>
+                
+                <!-- ASCII: Full gradient of characters from dense (@) to light (space) -->
+                <span class="label-btn active" data-value="ascii">ASCII</span>
+                
+                <!-- Blocks: Unicode block characters -->
+                <span class="label-btn" data-value="blocks">Blocks</span>
+                
+                <!-- Custom: User enters their own characters -->
+                <span class="label-btn" data-value="custom">Custom</span>
+            </div>
+            <!-- Only visible when "Custom" is selected -->
+            <input type="text" id="custom-chars" class="custom-palette-input" placeholder="Enter chars..." maxlength="20">
+        </div>
+
+        <!-- DENSITY SLIDER: Controls how many characters from palette are used -->
+        <!-- Low density = only darkest chars, High density = full palette range -->
+        <div class="control-group">
+            <label>Density:</label>
+            <input type="range" id="density" min="0" max="100" value="50">
+            <span id="density-value">50%</span>
+        </div>
+
+        <!-- COLOR SELECTOR: Choose the color of the ASCII output -->
+        <div class="control-group">
+            <label>Color:</label>
+            <div class="color-labels">
+                <div class="color-swatch active" data-value="green" title="Green"></div>
+                <div class="color-swatch" data-value="white" title="White"></div>
+                <div class="color-swatch" data-value="amber" title="Amber"></div>
+                <div class="color-swatch" data-value="blue" title="Blue"></div>
+                <div class="color-swatch" data-value="red" title="Red"></div>
+            </div>
+        </div>
+
+        <!-- INVERT BUTTON: Flips brightness mapping -->
+        <!-- Normal: dark areas = dense chars, bright areas = light chars -->
+        <!-- Inverted: dark areas = light chars, bright areas = dense chars -->
+        <div class="control-group">
+            <button class="btn" id="invert-btn">Invert</button>
+        </div>
+
+        <!-- FULLSCREEN BUTTON: Toggle between contained and fullscreen display -->
+        <div class="control-group">
+            <button class="btn" id="fullscreen-btn">Fullscreen</button>
+        </div>
+
+        <!-- SIDE BY SIDE BUTTON: Toggle webcam + ASCII side by side view -->
+        <div class="control-group">
+            <button class="btn" id="sidebyside-btn">Side by Side</button>
+        </div>
+
+        <!-- SCREENSHOT BUTTON: Save current ASCII frame as text file -->
+        <div class="control-group">
+            <button class="btn" id="screenshot-btn">Screenshot</button>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         DISPLAY AREA - Where the ASCII camera output is rendered
+         ============================================================ -->
+    <div class="display-container normal" id="display-container">
+        <div class="sidebyside-panel hidden" id="webcam-panel">
+            <span class="panel-label">Camera</span>
+            <video id="webcam-display" autoplay playsinline></video>
+        </div>
+        <div id="ascii-output"></div>
+        <div class="sidebyside-panel hidden" id="ascii-panel">
+            <span class="panel-label">ASCII</span>
+            <div id="ascii-output-wrapper">
+                <div id="ascii-output-inline"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FPS counter - shows current frame rate -->
+    <div class="fps-counter">
+        FPS: <span id="fps-value">0</span>
+    </div>
+
+    <script>
+        /* ============================================================
+           SECTION 1: DOM ELEMENT REFERENCES
+           ============================================================
+           Get references to all HTML elements we'll manipulate.
+           These are stored at the top for performance (avoid repeated queries).
+        */
+        
+        // Hidden video element - displays webcam stream
+        const video = document.getElementById('video');
+        
+        // Hidden canvas - used for pixel manipulation
+        const canvas = document.getElementById('canvas');
+        
+        // Canvas 2D context - provides methods to draw on canvas and read pixels
+        // willReadFrequently: true optimizes for frequent getImageData() calls
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        // Main display div where ASCII output is rendered
+        const asciiOutput = document.getElementById('ascii-output');
+        const asciiOutputInline = document.getElementById('ascii-output-inline');
+        
+        // Container div - used to calculate grid dimensions
+        const displayContainer = document.getElementById('display-container');
+        
+        // FPS counter span - updated every second
+        const fpsDisplay = document.getElementById('fps-value');
+        
+        // Density slider and its value display
+        const densitySlider = document.getElementById('density');
+        const densityValue = document.getElementById('density-value');
+        
+        // Action buttons
+        const invertBtn = document.getElementById('invert-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const screenshotBtn = document.getElementById('screenshot-btn');
+        const sidebysideBtn = document.getElementById('sidebyside-btn');
+        
+        // Webcam display element (visible in side-by-side mode)
+        const webcamDisplay = document.getElementById('webcam-display');
+        
+        // Query selectors for interactive elements
+        const paletteLabels = document.querySelectorAll('.palette-labels .label-btn');
+        const colorSwatches = document.querySelectorAll('.color-swatch');
+        const customCharsInput = document.getElementById('custom-chars');
+
+        /* ============================================================
+           SECTION 2: PALETTES & COLOR THEMES
+           ============================================================
+           Character palettes determine which characters are used to
+           represent brightness levels. Characters are ordered from
+           DENSEST (most visual ink, darkest) to LIGHTEST (least visual ink).
+           
+           Brightness 0 (black) → first character in palette
+           Brightness 255 (white) → last character in palette
+        */
+        
+        /*
+         * CHARACTER PALETTES
+         * 
+         * binary:   Simple 0/1 mode - threshold-based, no density control
+         * ascii:    Standard ASCII gradient - @ is darkest, space is lightest
+         * blocks:   Unicode block elements - █ is full, space is empty
+         * custom:   User-defined (empty by default, filled when user types)
+         */
+        const PALETTES = {
+            binary: '01',              // 2 chars, simple threshold
+            ascii: '@#%W$&MBEANH*+;:,. ',  // 16 chars, detailed gradient
+            blocks: '█▓▒░ ',            // 5 chars, block elements
+            custom: ''                  // User enters their own
+        };
+
+        /*
+         * COLOR THEMES
+         * 
+         * Each theme has two colors:
+         * - color: Main color used for active elements and ASCII output
+         * - dim: Dimmed/transparent version for borders, backgrounds, inactive states
+         * 
+         * The 'dim' is made by appending opacity to the hex (e.g., #00ff4133 = 20% opacity)
+         */
+        const COLOR_THEMES = {
+            green:   { color: '#00ff41', dim: '#00ff4133' },   // Classic Matrix
+            white:   { color: '#f0f0f0', dim: '#f0f0f033' },   // Clean monochrome
+            amber:   { color: '#ffb000', dim: '#ffb00033' },   // Retro terminal
+            blue:    { color: '#00cfff', dim: '#00cfff33' },   // Cyberpunk
+            red:     { color: '#ff4444', dim: '#ff444433' }    // Warning/danger
+        };
+
+        /* ============================================================
+           SECTION 3: APPLICATION STATE
+           ============================================================
+           Variables that track the current state of the application.
+           These change as user interacts with controls.
+        */
+        
+        let currentPalette = 'ascii';     // Currently selected character palette
+        let customPaletteString = '';     // User's custom characters (if using custom)
+        let densityLevel = 0.5;           // Density slider value (0 to 1)
+        let currentColorTheme = 'green'; // Currently selected color theme
+        let isInverted = false;           // Whether brightness is inverted
+        let isFullscreen = false;         // Whether display is fullscreen
+        let isSidebyside = false;         // Whether side-by-side view is active
+        
+        // Performance tracking
+        let frameCount = 0;              // Frames counted since last FPS update
+        let lastFpsTime = performance.now();  // Timestamp for FPS calculation
+        let animationId = null;           // RequestAnimationFrame ID (for cancellation)
+        let isRunning = false;            // Is the render loop active?
+        
+        // Grid dimensions - how many characters fit in the display
+        // Calculated based on container size, cached to prevent recalculation every frame
+        let cachedGridCols = 80;          // Default columns
+        let cachedGridRows = 45;         // Default rows
+
+        /* ============================================================
+           SECTION 4: WEBCAM INITIALIZATION
+           ============================================================
+           Handles requesting camera access and setting up the video stream.
+        */
+        
+        /*
+         * initWebcam() - Entry point that starts the whole application
+         * 
+         * 1. Request camera permission via getUserMedia()
+         * 2. Attach the video stream to the video element
+         * 3. Wait for video metadata to load
+         * 4. Set up canvas dimensions to match video
+         * 5. Calculate how many ASCII chars fit on screen
+         * 6. Start the rendering loop
+         */
+        async function initWebcam() {
+            try {
+                // Request webcam access with preferred 640x480 resolution
+                // 480p is a good balance between quality and performance
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 640 }, height: { ideal: 480 } }
+                });
+                
+                // Attach the camera stream to our hidden video element
+                video.srcObject = stream;
+                
+                // Also attach to visible webcam display for side-by-side mode
+                webcamDisplay.srcObject = stream;
+                
+                // Wait for video metadata to load (ensures videoWidth/Height are available)
+                await new Promise((resolve) => {
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        resolve();
+                    } else {
+                        video.addEventListener('loadedmetadata', resolve, { once: true });
+                    }
+                });
+                
+                // Start playing
+                await video.play();
+                
+                // Set canvas size to match video dimensions
+                setupCanvas();
+                
+                // Calculate initial grid dimensions
+                calculateAndCacheDimensions();
+                
+                // Start the rendering loop
+                startRendering();
+            } catch (error) {
+                // Show error message if camera access denied or unavailable
+                showError('Unable to access webcam. Please grant camera permission.');
+            }
+        }
+
+        /*
+         * setupCanvas() - Configures canvas dimensions
+         * 
+         * The canvas must match video dimensions so we can:
+         * 1. Draw the full video frame onto it
+         * 2. Read all pixels accurately
+         */
+        function setupCanvas() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+
+        /* ============================================================
+           SECTION 5: RENDERING - The core ASCII conversion logic
+           ============================================================
+           This section contains the main loop that converts video
+           frames to ASCII art in real-time.
+        */
+
+        /*
+         * getCurrentPalette() - Returns the active character set
+         * 
+         * If custom palette is selected AND user has entered characters,
+         * return their custom string. Otherwise return the predefined one.
+         */
+        function getCurrentPalette() {
+            if (currentPalette === 'custom' && customPaletteString.length > 0) {
+                return customPaletteString;
+            }
+            return PALETTES[currentPalette];
+        }
+
+        /*
+         * brightnessToChar() - Core algorithm: maps brightness (0-255) to a character
+         * 
+         * This is the heart of the ASCII conversion:
+         * - Takes a brightness value (0 = black, 255 = white)
+         * - Selects the appropriate character based on:
+         *   1. Current palette
+         *   2. Density setting
+         *   3. Invert setting
+         * 
+         * @param {number} brightness - Pixel brightness from 0 to 255
+         * @returns {string} - A single character representing that brightness
+         */
+        function brightnessToChar(brightness) {
+            const palette = getCurrentPalette();
+            
+            // Empty palette = show spaces
+            if (palette.length === 0) return ' ';
+            
+            let charIndex;  // Index into palette for this brightness
+            
+            /*
+             * BINARY MODE: Simple threshold-based switching
+             * 
+             * The density slider controls the threshold:
+             * - Low density (0%):   threshold = 255 (almost everything is '0')
+             * - High density (100%): threshold = 128 (balanced mix)
+             * 
+             * If brightness > threshold → use '1'
+             * Otherwise → use '0'
+             */
+            if (currentPalette === 'binary') {
+                const threshold = 255 - (densityLevel * 127);
+                charIndex = brightness > threshold ? 1 : 0;
+            } 
+            /*
+             * OTHER MODES (ASCII, Blocks, Custom): Gradient mapping
+             * 
+             * effectiveMax = how many chars from palette to use based on density
+             * - Density 0% → effectiveMax = 1 (only darkest char)
+             * - Density 100% → effectiveMax = full palette length
+             * 
+             * charIndex = maps brightness to position in effective range
+             * Lower brightness = lower index (darker chars)
+             * Higher brightness = higher index (lighter chars)
+             */
+            else {
+                // Calculate how many palette characters to use based on density
+                const effectiveMax = Math.max(1, Math.floor(palette.length * densityLevel));
+                
+                // Map brightness (0-255) to palette index (0 to effectiveMax-1)
+                // Brightness 0 → index 0 (darkest char)
+                // Brightness 255 → index effectiveMax-1 (lightest char in range)
+                charIndex = Math.min(
+                    Math.floor((brightness / 255) * effectiveMax), 
+                    palette.length - 1  // Don't exceed palette bounds
+                );
+            }
+            
+            /*
+             * INVERSION: Flip the mapping if invert is enabled
+             * 
+             * Normal: brightness 0 → index 0 (dark chars for dark areas)
+             * Inverted: brightness 0 → last index (light chars for dark areas)
+             */
+            const finalIndex = isInverted ? (palette.length - 1 - charIndex) : charIndex;
+            
+            return palette[finalIndex];
+        }
+
+        /*
+         * calculateAndCacheDimensions() - Determines how many chars fit on screen
+         * 
+         * This is calculated based on:
+         * - Container size (the display area)
+         * - Character dimensions (from CSS: 8px font, 8px line-height)
+         * - Padding (40px in normal mode, 0 in fullscreen)
+         * 
+         * Results are cached to prevent an infinite loop where:
+         * More chars → larger container → more chars → even larger → infinite
+         */
+        function calculateAndCacheDimensions() {
+            // Get actual pixel dimensions of the display container
+            const containerRect = displayContainer.getBoundingClientRect();
+            const containerWidth = containerRect.width;
+            const containerHeight = containerRect.height;
+            
+            // Account for padding based on mode
+            const paddingX = isFullscreen ? 0 : (isSidebyside ? 20 : 40);
+            const paddingY = isFullscreen ? 0 : (isSidebyside ? 20 : 40);
+            
+            // Usable area for ASCII output
+            const usableWidth = Math.max(1, containerWidth - paddingX);
+            const usableHeight = Math.max(1, containerHeight - paddingY);
+            
+            // Character dimensions from CSS (8px font with ~0.6 aspect ratio for monospace)
+            const charWidth = 4.8;   // 8px * 0.6 (monospace chars are ~60% as wide as tall)
+            const charHeight = 8;    // 8px line-height
+            
+            // Calculate how many columns and rows fit
+            cachedGridCols = Math.floor(usableWidth / charWidth);
+            cachedGridRows = Math.floor(usableHeight / charHeight);
+            
+            // Clamp to reasonable bounds (prevents too few or too many characters)
+            cachedGridCols = Math.max(40, Math.min(120, cachedGridCols));  // Min 40, max 120 cols
+            cachedGridRows = Math.max(30, Math.min(80, cachedGridRows));  // Min 30, max 80 rows
+            
+            // Calculate font size for side-by-side mode to fill the panel
+            if (isSidebyside) {
+                const asciiPanel = document.getElementById('ascii-panel');
+                if (asciiPanel && cachedGridCols > 0 && cachedGridRows > 0) {
+                    const panelRect = asciiPanel.getBoundingClientRect();
+                    const labelHeight = 25; // Height of panel label
+                    const panelWidth = panelRect.width;
+                    const panelHeight = panelRect.height - labelHeight;
+                    
+                    // For monospace: char width ≈ fontSize * 0.5, char height = fontSize
+                    // To fill width: fontSize = panelWidth / (cols * 0.5)
+                    // To fill height: fontSize = panelHeight / rows
+                    const fontSizeByWidth = panelWidth / (cachedGridCols * 0.5);
+                    const fontSizeByHeight = panelHeight / cachedGridRows;
+                    const fontSize = Math.min(fontSizeByWidth, fontSizeByHeight);
+                    
+                    // Apply font size to both output elements
+                    asciiOutput.style.fontSize = fontSize + 'px';
+                    asciiOutput.style.lineHeight = fontSize + 'px';
+                    if (asciiOutputInline) {
+                        asciiOutputInline.style.fontSize = fontSize + 'px';
+                        asciiOutputInline.style.lineHeight = fontSize + 'px';
+                    }
+                }
+            } else {
+                // Reset to default size for normal/fullscreen mode
+                asciiOutput.style.fontSize = '';
+                asciiOutput.style.lineHeight = '';
+                if (asciiOutputInline) {
+                    asciiOutputInline.style.fontSize = '';
+                    asciiOutputInline.style.lineHeight = '';
+                }
+            }
+        }
+
+        /*
+         * processFrame() - Main rendering function, called ~60 times per second
+         * 
+         * This is the render loop that:
+         * 1. Captures current video frame
+         * 2. Converts to grayscale brightness values
+         * 3. Maps each brightness to an ASCII character
+         * 4. Updates the display
+         * 
+         * Key insight: We don't render every pixel. We sample the video
+         * and render one character per grid cell.
+         */
+        function processFrame() {
+            // Don't run if paused
+            if (!isRunning) return;
+            
+            /*
+             * STEP 1: Capture video frame to canvas
+             * 
+             * drawImage() draws the current video frame onto the canvas
+             * at position (0,0) scaled to canvas width/height
+             */
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            /*
+             * STEP 2: Read pixel data from canvas
+             * 
+             * getImageData() returns RGBA values for every pixel
+             * Each pixel = 4 values: Red, Green, Blue, Alpha
+             * Data is a flat array: [R0, G0, B0, A0, R1, G1, B1, A1, ...]
+             */
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            
+            /*
+             * STEP 3: Calculate how much of the video each ASCII char represents
+             * 
+             * sampleWidth = video pixels per character column
+             * sampleHeight = video pixels per character row
+             * 
+             * Example: 640px wide video / 80 chars = 8 pixels per char width
+             */
+            const sampleWidth = canvas.width / cachedGridCols;
+            const sampleHeight = canvas.height / cachedGridRows;
+            
+            // Build the ASCII output as a string (more efficient than += for single chars)
+            let asciiHtml = '';
+            
+            /*
+             * STEP 4: Loop through each grid position and convert to character
+             * 
+             * We iterate through every character position in our grid
+             * and sample the corresponding pixel(s) from the video
+             */
+            for (let row = 0; row < cachedGridRows; row++) {
+                for (let col = 0; col < cachedGridCols; col++) {
+                    /*
+                     * Sample from the CENTER of each grid cell
+                     * This gives more accurate representation than corner sampling
+                     */
+                    const x = Math.floor(col * sampleWidth + sampleWidth / 2);
+                    const y = Math.floor(row * sampleHeight + sampleHeight / 2);
+                    
+                    // Ensure coordinates are within canvas bounds
+                    const safeX = Math.min(x, canvas.width - 1);
+                    const safeY = Math.min(y, canvas.height - 1);
+                    
+                    /*
+                     * Calculate pixel index in the flat array
+                     * Formula: y * rowWidth + x, then * 4 for RGBA
+                     */
+                    const index = (safeY * canvas.width + safeX) * 4;
+                    
+                    // Extract individual color channels
+                    const r = pixels[index];      // Red value (0-255)
+                    const g = pixels[index + 1];  // Green value (0-255)
+                    const b = pixels[index + 2];  // Blue value (0-255)
+                    
+                    /*
+                     * Convert to grayscale brightness
+                     * 
+                     * Simple average method: (R + G + B) / 3
+                     * This works well enough for ASCII art
+                     * (More accurate methods exist but are slower)
+                     */
+                    const brightness = (r + g + b) / 3;
+                    
+                    // Map brightness to character
+                    asciiHtml += brightnessToChar(brightness);
+                }
+                
+                // Add newline after each row
+                asciiHtml += '\n';
+            }
+            
+            /*
+             * STEP 5: Update the display
+             * 
+             * innerHTML is used so the color theme can be applied
+             * In a simple version, we could use innerText for plain text
+             */
+            asciiOutput.innerHTML = asciiHtml;
+            if (asciiOutputInline) asciiOutputInline.innerHTML = asciiHtml;
+            
+            // Update FPS counter
+            updateFps();
+            
+            // Request next frame (creates the animation loop)
+            animationId = requestAnimationFrame(processFrame);
+        }
+
+        /*
+         * startRendering() - Starts the render loop if not already running
+         */
+        function startRendering() {
+            if (!isRunning) {
+                isRunning = true;
+                processFrame();
+            }
+        }
+
+        /*
+         * stopRendering() - Stops the render loop
+         * Used for cleanup or potential pause feature
+         */
+        function stopRendering() {
+            isRunning = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        /*
+         * updateFps() - Updates the FPS counter
+         * 
+         * Calculates frames per second by:
+         * 1. Counting frames
+         * 2. Every 1000ms, dividing count by elapsed time
+         * 3. Resetting for the next second
+         */
+        function updateFps() {
+            frameCount++;
+            const now = performance.now();
+            const elapsed = now - lastFpsTime;
+            
+            // Update display once per second
+            if (elapsed >= 1000) {
+                // Calculate FPS: (frames * 1000ms) / elapsed time
+                const fps = Math.round((frameCount * 1000) / elapsed);
+                fpsDisplay.textContent = fps;
+                
+                // Reset for next second
+                frameCount = 0;
+                lastFpsTime = now;
+            }
+        }
+
+        /* ============================================================
+           SECTION 6: COLOR MANAGEMENT
+           ============================================================
+           Handles changing the color theme of both the UI and
+           the ASCII output.
+        */
+
+        /*
+         * applyColorTheme() - Changes the color scheme
+         * 
+         * Updates:
+         * 1. CSS custom properties (--theme-color and --theme-color-dim)
+         *    These are used throughout the CSS and automatically update
+         *    all themed elements (buttons, borders, shadows, etc.)
+         * 2. ASCII output text color
+         * 3. Active state of color swatches
+         * 
+         * @param {string} themeName - Key from COLOR_THEMES object
+         */
+        function applyColorTheme(themeName) {
+            currentColorTheme = themeName;
+            
+            // Get the theme object (contains color and dim values)
+            const theme = COLOR_THEMES[themeName];
+            
+            // Set CSS custom properties on the root element
+            // These cascade to all elements that use var(--theme-color)
+            document.documentElement.style.setProperty('--theme-color', theme.color);
+            document.documentElement.style.setProperty('--theme-color-dim', theme.dim);
+            
+            // Update ASCII output color
+            asciiOutput.style.color = theme.color;
+            if (asciiOutputInline) asciiOutputInline.style.color = theme.color;
+            
+            // Update swatch active states
+            colorSwatches.forEach(swatch => {
+                swatch.classList.toggle('active', swatch.dataset.value === themeName);
+            });
+        }
+
+        /* ============================================================
+           SECTION 7: UI EVENT HANDLERS
+           ============================================================
+           Functions that respond to user interactions with controls.
+        */
+
+        /*
+         * toggleFullscreen() - Toggles between normal and fullscreen display
+         * 
+         * Fullscreen mode:
+         * - Removes padding from display container
+         * - Button text changes to "Normal"
+         * - Grid dimensions are recalculated (more characters fit)
+         */
+        function toggleFullscreen() {
+            if (isSidebyside) {
+                isSidebyside = false;
+                sidebysideBtn.classList.remove('active');
+                document.getElementById('webcam-panel').classList.add('hidden');
+                document.getElementById('ascii-panel').classList.add('hidden');
+                asciiOutput.style.display = 'block';
+            }
+            isFullscreen = !isFullscreen;
+            
+            // Toggle CSS classes
+            displayContainer.classList.toggle('normal', !isFullscreen && !isSidebyside);
+            displayContainer.classList.toggle('fullscreen', isFullscreen && !isSidebyside);
+            
+            // Update button appearance
+            fullscreenBtn.classList.toggle('active', isFullscreen);
+            fullscreenBtn.textContent = isFullscreen ? 'Normal' : 'Fullscreen';
+            
+            // Recalculate grid after transition completes
+            setTimeout(() => {
+                calculateAndCacheDimensions();
+            }, 50);
+        }
+
+        function toggleSidebyside() {
+            if (isFullscreen) {
+                isFullscreen = false;
+                fullscreenBtn.classList.remove('active');
+                fullscreenBtn.textContent = 'Fullscreen';
+                displayContainer.classList.remove('fullscreen');
+            }
+            isSidebyside = !isSidebyside;
+            
+            displayContainer.classList.remove('normal', 'fullscreen', 'sidebyside');
+            displayContainer.classList.add(isSidebyside ? 'sidebyside' : 'normal');
+            
+            const webcamPanel = document.getElementById('webcam-panel');
+            const asciiPanel = document.getElementById('ascii-panel');
+            webcamPanel.classList.toggle('hidden', !isSidebyside);
+            asciiPanel.classList.toggle('hidden', !isSidebyside);
+            asciiOutput.style.display = isSidebyside ? 'none' : 'block';
+            
+            sidebysideBtn.classList.toggle('active', isSidebyside);
+            
+            setTimeout(() => {
+                calculateAndCacheDimensions();
+            }, 100);
+        }
+
+        /*
+         * handlePaletteChange() - Updates the character palette
+         * 
+         * When palette changes:
+         * 1. Update currentPalette state variable
+         * 2. Toggle active class on palette buttons
+         * 3. Show/hide custom input field (only for custom palette)
+         */
+        function handlePaletteChange(value) {
+            currentPalette = value;
+            
+            // Update active states
+            paletteLabels.forEach(label => {
+                label.classList.toggle('active', label.dataset.value === value);
+            });
+            
+            // Show custom input if "Custom" is selected
+            customCharsInput.classList.toggle('visible', value === 'custom');
+        }
+
+        /*
+         * handleCustomPaletteInput() - Stores user's custom characters
+         * 
+         * Must have at least one character for valid rendering.
+         * If empty, defaults to a space to prevent errors.
+         */
+        function handleCustomPaletteInput(value) {
+            customPaletteString = value.length > 0 ? value : ' ';
+        }
+
+        /*
+         * handleDensityChange() - Updates density level from slider
+         * 
+         * Slider range is 0-100, converted to 0-1 decimal.
+         * Display shows percentage.
+         */
+        function handleDensityChange(value) {
+            densityLevel = parseInt(value, 10) / 100;
+            densityValue.textContent = value + '%';
+        }
+
+        /*
+         * toggleInvert() - Toggles brightness inversion
+         * 
+         * Inverted mode swaps light and dark:
+         * - Dark areas become light (use light characters)
+         * - Light areas become dark (use dense characters)
+         */
+        function toggleInvert() {
+            isInverted = !isInverted;
+            invertBtn.classList.toggle('active', isInverted);
+        }
+
+        /*
+         * downloadScreenshot() - Saves current frame as text file
+         * 
+         * Uses the Blob API to create a downloadable file:
+         * 1. Get text content from ASCII output
+         * 2. Create Blob with text/plain type
+         * 3. Create temporary download link
+         * 4. Click link to trigger download
+         * 5. Clean up the URL
+         */
+        function downloadScreenshot() {
+            const content = asciiOutput.innerText;
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `ascii-capture-${Date.now()}.txt`;
+            link.click();
+            
+            // Clean up object URL to prevent memory leaks
+            URL.revokeObjectURL(url);
+        }
+
+        /*
+         * showError() - Displays error message in the ASCII area
+         */
+        function showError(message) {
+            asciiOutput.innerHTML = `<div class="error-message">${message}</div>`;
+            if (asciiOutputInline) asciiOutputInline.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        /* ============================================================
+           SECTION 8: EVENT LISTENERS
+           ============================================================
+           Connect HTML elements to their handler functions.
+           These run once at startup and listen for user interactions.
+        */
+
+        // Palette selection buttons
+        paletteLabels.forEach(label => {
+            label.addEventListener('click', () => {
+                handlePaletteChange(label.dataset.value);
+            });
+        });
+
+        // Custom palette text input
+        customCharsInput.addEventListener('input', (e) => {
+            handleCustomPaletteInput(e.target.value);
+        });
+
+        // Color swatches
+        colorSwatches.forEach(swatch => {
+            swatch.addEventListener('click', () => {
+                applyColorTheme(swatch.dataset.value);
+            });
+        });
+
+        // Density slider
+        densitySlider.addEventListener('input', (e) => {
+            handleDensityChange(e.target.value);
+        });
+
+        // Action buttons
+        invertBtn.addEventListener('click', toggleInvert);
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        sidebysideBtn.addEventListener('click', toggleSidebyside);
+        screenshotBtn.addEventListener('click', downloadScreenshot);
+
+        // Window resize handler with debouncing
+        // Debouncing: wait 200ms after user stops resizing before recalculating
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                calculateAndCacheDimensions();
+            }, 200);
+        });
+
+        // Video metadata loaded (when webcam is ready)
+        // Ensures canvas is set up correctly when video dimensions are known
+        video.addEventListener('loadedmetadata', () => {
+            setupCanvas();
+            calculateAndCacheDimensions();
+        });
+
+        /* ============================================================
+           SECTION 9: INITIALIZATION
+           ============================================================
+           Start the application!
+        */
+        
+        // This single call kicks off the entire webcam ASCII camera
+        initWebcam();
+    </script>
+</body>
+</html>
